@@ -1,42 +1,61 @@
-from main import DataManager , Analyzer
+from main import DataManager, Analyzer, ChartBuilder
+import matplotlib.pyplot as plt
 
-print("--- STARTING TEST ---")
+def run_tests():
+    print("--- 🧪 TESTING NEW FEATURES (R2 & TIME SERIES) ---")
     
-manager = DataManager()
+    # 1. Load Data
+    manager = DataManager()
+    df = manager.get_clean_data()
     
-print("Attempting to load and merge files...")
-df = manager.get_clean_data()
+    if df.empty:
+        print("❌ Data Load Failed.")
+        return
+
+    # --- TEST A: CROSS-SECTION (SNAPSHOT) ---
+    print("\n[A] Testing Regression & R-Squared (Year 2019)...")
+    data_2019 = df[df['Year'] == 2019]
     
-if not df.empty:
-    print("\nSUCCESS! Data Loaded.")
-    print(f"Total Rows Found: {len(df)}")
-    print("\nour clean data:")
-    print(df.head)  
-else:
-    print("\nFAILURE: Data frame is empty. Check file paths.")
-
-
-        
-# Filter for a specific year (e.g., 2019)
-data_2019 = df[df['Year'] == 2019]
-print(f"Data for 2019: {len(data_2019)} countries found.")
-
-if not data_2019.empty:
     analyzer = Analyzer(data_2019)
-        
-    #Test Averages
-    avg_gdp, avg_life = analyzer.calculate_averages()
-    print(f"\nAverage GDP: ${avg_gdp:,.2f}")
-    print(f"Average Life Expectancy: {avg_life:.1f} Years")
-        
-    #Test Correlation
-    corr = analyzer.calculate_correlation()
-    print(f"Correlation: {corr:.4f}")
-        
-    #Test Regression
     slope, intercept = analyzer.run_regression()
-    print(f"Regression Line: Slope={slope:.2f}, Intercept={intercept:.2f}")
-    print("(If Slope is positive, it means Money helps Health!)")
-        
-else:
-    print("Error: No data found for 2019.")
+    r_sq = analyzer.get_r_squared() # <--- Testing the new function
+    
+    print(f"   -> Slope: {slope:.2f}")
+    print(f"   -> R-Squared: {r_sq:.4f}")
+    
+    if 0 <= r_sq <= 1:
+        print("   ✅ R-Squared is valid (between 0 and 1).")
+    else:
+        print("   ❌ R-Squared is mathematically impossible.")
+
+    print("   -> Generating Scatter Plot...")
+    fig1 = ChartBuilder.plot_scatter(data_2019, slope, intercept)
+    fig1.savefig("test_scatter.png")
+    print("   ✅ Saved 'test_scatter.png'")
+
+    # --- TEST B: TIME SERIES (HISTORY) ---
+    print("\n[B] Testing Time Series Logic...")
+    
+    # We need to initialize Analyzer with ALL data, not just 2019
+    history_analyzer = Analyzer(df)
+    
+    # Let's try to find a country (e.g., China)
+    target_country = "China"
+    
+    # Check if country exists in data
+    if target_country not in df['Country'].values:
+        print(f"   ⚠️ {target_country} not found. Picking the first country in the list...")
+        target_country = df['Country'].unique()[0]
+    
+    print(f"   -> Extracting history for: {target_country}")
+    country_data = history_analyzer.get_country_data(target_country)
+    
+    print(f"   -> Found {len(country_data)} years of data.")
+    
+    print("   -> Generating Time Series Chart...")
+    fig2 = ChartBuilder.plot_time_series(country_data, target_country)
+    fig2.savefig("test_timeseries.png")
+    print("   ✅ Saved 'test_timeseries.png'")
+
+if __name__ == "__main__":
+    run_tests()
