@@ -1,6 +1,20 @@
 from main import DataManager, Analyzer, ChartBuilder
 import matplotlib.pyplot as plt
+import pandas as pd
 
+# Get the data after merging and feature engineering
+
+manager = DataManager() 
+
+df_check = manager.get_clean_data()
+
+print("\n--- MISSING DATA CHECK ---")
+print("Rows before dropping NaNs:", len(df_check))
+
+# This prints the number of missing values for every column
+print(df_check.isnull().sum())
+
+'''
 def run_tests():
     print("--- 🧪 TESTING NEW FEATURES (R2 & TIME SERIES) ---")
     
@@ -59,3 +73,4 @@ def run_tests():
 
 if __name__ == "__main__":
     run_tests()
+    '''
