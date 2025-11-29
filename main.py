@@ -1,245 +1,10 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
-import statsmodels.formula.api as smf
 
-class DataManager:
-    """
-    This class handles loading and cleaning and merging the data.
-    """
-    def __init__(self):
-
-        self.gdp_path = "data/gdp.csv"
-        self.life_path = "data/life_expectancy.csv"
-        self.mortality_path = "data/child_mortality.csv"
-
-    def get_clean_data(self):
-        # Load GDP Data
-        gdp_df = pd.read_csv(self.gdp_path)
-        gdp_df = gdp_df[['REF_AREA_LABEL','REF_AREA', 'TIME_PERIOD', 'OBS_VALUE']]
-        gdp_df.columns = ['Country', 'Code', 'Year', 'GDP']
-
-        # Load Life Expectancy Data
-        life_df = pd.read_csv(self.life_path)
-        life_df = life_df[['REF_AREA_LABEL','REF_AREA', 'TIME_PERIOD', 'OBS_VALUE']]
-        life_df.columns = ['Country','Code','Year', 'Life_Expectancy']
-
-        # LOAD & CLEAN MORTALITY
-        mortality_df = pd.read_csv(self.mortality_path)
-        mortality_df = mortality_df[['REF_AREA_LABEL', 'REF_AREA', 'TIME_PERIOD', 'OBS_VALUE']]
-        mortality_df.columns = ['Country', 'Code', 'Year', 'Mortality_Rate']
-
-        # Merge them together
-        merged_data = pd.merge(gdp_df, life_df, on=['Country','Code', 'Year'], how='inner')
-        # Merge Mortality data
-        merged_data = pd.merge(merged_data, mortality_df, on=['Country', 'Code', 'Year'], how='inner')
-
-        data = merged_data.sort_values(by=['Country', 'Year'])
-        # Calculate GDP Growth Rate
-        data['GDP_Last_Year'] = data.groupby('Country')['GDP'].shift(1)
-        data['GDP_Growth'] = (data['GDP'] - data['GDP_Last_Year']) / data['GDP_Last_Year']* 100
-        
-        return data
-    
+from data_manager import DataManager
+from analyzer import Analyzer
+from chart_builder import ChartBuilder
 
 
-class Analyzer:
-    """
-    This class handles the statistics like correlation, regression, and filtering.
-    """
-    def __init__(self, data):
-        self.data = data
-
-    def calculate_averages(self):
-        avg_gdp = self.data['GDP'].mean()
-        avg_life = self.data['Life_Expectancy'].mean()
-        avg_mortality = self.data['Mortality_Rate'].mean()
-        return avg_gdp, avg_life, avg_mortality
-
-    def get_correlation_matrix(self):
-        """
-        Calculates the correlation between GDP, Life Exp, and Mortality.
-        """
-        # Select numeric columns only
-        cols = ['GDP', 'Life_Expectancy', 'Mortality_Rate']
-        return self.data[cols].corr()
-    
-    def calculate_regression_stats(self, x_col, y_col, use_log=False):
-        """
-        Calculates Slope, Intercept, and R-Squared for any two columns.
-        """
-        # 1. Prepare data (drop NaNs for these 2 specific columns)
-        # We need to filter out zeros if using log
-        subset = self.data[[x_col, y_col]].dropna()
-        
-        if use_log:
-            subset = subset[subset[x_col] > 0]
-            x = np.log(subset[x_col])
-        else:
-            x = subset[x_col]
-            
-        y = subset[y_col]
-        
-        # 2. Correlation & R-Squared
-        corr = x.corr(y)
-        r_squared = corr ** 2
-        
-        # 3. Slope & Intercept
-        slope, intercept = np.polyfit(x, y, 1)
-        
-        return r_squared, slope, intercept
-
-    def run_regression(self):
-        """
-        Simple 1-variable regression for the Scatter Plot line.
-        """
-        x = self.data['GDP']
-        y = self.data['Life_Expectancy']
-        
-        # Check to avoid log(0) errors
-        valid_data = self.data[self.data['GDP'] > 0]
-        
-        slope, intercept = np.polyfit(np.log(valid_data['GDP']), valid_data['Life_Expectancy'], 1) 
-        return slope, intercept
-    
-        
-    
-    def run_panel_regression(self):
-        """
-        Runs a Pooled OLS Regression on the entire Panel Dataset.
-        Equation: Life_Expectancy = B0 + B1*log(GDP) + B2*Mortality_Rate
-        """
-        # We use 'np.log()' inside the formula because GDP is exponential
-        # This formula tells statsmodels exactly what math to do
-        model = smf.ols("Life_Expectancy ~ np.log(GDP) + Mortality_Rate", data=self.data)
-        results = model.fit()
-        return results
-    
-    def get_country_data(self, country_name):
-        """Filters the data for a specific country (Time Series)."""
-        return self.data[self.data['Country'] == country_name].sort_values('Year')
-
-# CLASS 3: CHART BUILDER
-class ChartBuilder:
-    """
-    This class handles the Visualization.
-    """
-
-    @staticmethod
-    def plot_correlation_heatmap(corr_matrix):
-        """
-        Draws a Heatmap to visualize the correlation matrix.
-        """
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5, ax=ax)
-        ax.set_title("Correlation Heatmap")
-        return fig
-    
-    @staticmethod
-    def plot_scatter(data, x_col, y_col, slope, intercept, r2, title, xlabel, use_log=False):
-        """
-        Generic scatter plotter that can handle both GDP (Log) and Mortality (Linear).
-        Displays Slope and Intercept in the title.
-        """
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        # 1. Draw Scatter
-        sns.scatterplot(data=data, x=x_col, y=y_col, alpha=0.6, s=80, ax=ax)
-        
-        # 2. Draw Regression Line
-        # Remove NaNs/Zeros for plotting line
-        if use_log:
-            clean_data = data[data[x_col] > 0]
-            x_vals = clean_data[x_col]
-            y_vals = slope * np.log(x_vals) + intercept
-            ax.set_xscale('log') # Log Scale for GDP
-            line_color = 'red'
-        else:
-            x_vals = data[x_col]
-            y_vals = slope * x_vals + intercept
-            line_color = 'orange' # Different color for Mortality
-
-        ax.plot(x_vals, y_vals, color=line_color, linewidth=3, label='Trend Line')
-
-        # 3. Dynamic Title with Stats
-        # We put the math in the subtitle
-        full_title = f"{title}\n(Slope: {slope:.2f} | Intercept: {intercept:.2f} | R²: {r2:.2f})"
-        
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel("Life Expectancy (Years)")
-        ax.set_title(full_title)
-        ax.legend()
-        ax.grid(True, linestyle='--', alpha=0.3)
-        return fig
-    
-    @staticmethod
-    def plot_3d_scatter(data):
-        """
-        Uses Plotly to draw a 3D chart since we have 3 variables now.
-        """
-        fig = px.scatter_3d(
-            data,
-            x='GDP',
-            y='Mortality_Rate',
-            z='Life_Expectancy',
-            color='Country',
-            log_x=True, # Log scale for GDP per capita
-            title="3D Analysis: Wealth, Health & Mortality",
-            height=600
-        )
-        return fig
-
-    @staticmethod
-    def plot_time_series(country_data, country_name):
-        """
-        Draws the evolution of a country over time.
-        """
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
-        
-        # Plot 1: GDP
-        sns.lineplot(data=country_data, x='Year', y='GDP', ax=ax1, color='green', linewidth=2)
-        ax1.set_title(f"{country_name}: Economic Growth")
-        ax1.set_ylabel("GDP per capita ($)")
-        ax1.grid(True)
-        
-        # Plot 2: Life Expectancy
-        sns.lineplot(data=country_data, x='Year', y='Life_Expectancy', ax=ax2, color='blue', linewidth=2)
-        ax2.set_title(f"{country_name}: Health Improvement")
-        ax2.set_ylabel("Life Expectancy (Years)")
-        ax2.grid(True)
-
-        # Plot 3: Mortality Rate
-        sns.lineplot(data=country_data, x='Year', y='Mortality_Rate', ax=ax3, color='red', linewidth=2)
-        ax3.set_title(f"{country_name}: Child Mortality Rate")
-        ax3.set_ylabel("Mortality Rate (per 1,000 live births)")        
-        ax3.grid(True)     
-        
-        plt.tight_layout()
-        return fig
-    
-    @staticmethod
-    def plot_map(data, column_to_plot, title):
-        """
-        Creates an interactive Plotly World Map.
-        """
-        import plotly.express as px
-        
-        fig = px.choropleth(
-            data,
-            locations="Code",             
-            color=column_to_plot,       
-            hover_name="Country",     
-            color_continuous_scale=px.colors.sequential.Plasma, 
-            title=title
-        )
-        
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-        return fig
-    
-#  THE MAIN APPLICATION     
 def main():
     st.set_page_config(page_title="Wealth & Health Analysis", layout="wide")
     st.title("🌍 Global Development: Wealth, Health & Mortality")
@@ -284,11 +49,21 @@ def main():
 
         with tab1:
             st.markdown("#### Interactive Global Maps")
-            map_var = st.radio("Select Variable to Map:", 
-                               ['GDP', 'Life_Expectancy', 'Mortality_Rate', 'GDP_Growth'], 
-                               horizontal=True)
-            display_title = "GDP per capita" if map_var == 'GDP' else map_var
-            fig_map = ChartBuilder.plot_map(year_data, map_var, f"Global {display_title} ({selected_year})")
+            
+            map_options = {
+                "GDP per capita": "GDP",
+                "Life Expectancy": "Life_Expectancy",
+                "Child Mortality": "Mortality_Rate",
+                "GDP per capita Growth": "GDP_Growth"
+            }
+            
+            selected_label = st.radio("Select Variable to Map:", 
+                                      options=list(map_options.keys()), 
+                                      horizontal=True)
+            
+            column_name = map_options[selected_label]
+            
+            fig_map = ChartBuilder.plot_map(year_data, column_name, f"Global {selected_label} ({selected_year})")
             st.plotly_chart(fig_map, use_container_width=True)
 
         with tab2:
@@ -336,7 +111,7 @@ def main():
             st.plotly_chart(fig_3d, use_container_width=True)
 
         # Leaderboard Table
-        with st.expander(f"Click to see Top 30 Economies in {selected_year}"):
+        with st.expander(f"Click to see Top 30 Economies by GDP per capita in {selected_year}"):
             top_30 = year_data.sort_values(by='GDP', ascending=False).head(30)
             top_30 = top_30.rename(columns={'GDP': 'GDP per capita'})
             st.dataframe(top_30, hide_index=True)
@@ -351,7 +126,7 @@ def main():
         st.write("### Model Results")
         st.code(results.summary().tables[1].as_text(), language='text')
         
-        # ANALYTICAL MARKDOWN 3 for panel regression
+        # ANALYTICAL MARKDOWN for panel regression
         st.markdown(f"""
         ### 📉 Regression Analysis
         This model controls for both variables simultaneously using data from all years.
@@ -362,10 +137,10 @@ def main():
 
     # SECTION 3: TIME SERIES
     st.markdown("---")
-    st.header("3. Country Deep Dive")
+    st.header("3. time Series Analysis: Country Evolution Over Time")
     
     country_list = sorted(all_data['Country'].unique())
-    default_country = "China" if "China" in country_list else country_list[0]
+    default_country = "Italy" if "Italy" in country_list else country_list[0]
     selected_country = st.selectbox("Select a Country:", country_list, index=country_list.index(default_country))
 
     history_analyzer = Analyzer(all_data)
@@ -378,7 +153,7 @@ def main():
     st.markdown("""
     ### ⏳ Quick Takeaways
     * **Development Order:** Usually, the red line (Mortality) drops *before* the blue line (Life Exp) shoots up.
-    * **The COVID Shock:** Look at the very end of the charts (2020-2021). You will often see a sharp dip in GDP per capita and Life Expectancy—clear evidence of the pandemic's impact.
+    * **The COVID Shock:** Look at the very end of the charts (2020-2021). You will often see a sharp dip in Life Expectancy and GDP per capita clear evidence of the pandemic's impact.
     """)
 
 if __name__ == "__main__":
